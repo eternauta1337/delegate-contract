@@ -11,21 +11,13 @@ import "./interfaces/common/IERC20.sol";
 
 contract Delegator {
     // ------------------------------------
-    // Constant properties
+    // Aave contracts (mainnet)
     // ------------------------------------
 
-    // AAVE contracts (mainnet)
-    ILendingPool                          private constant _lendingPool       = ILendingPool(0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9);
-    IProtocolDataProvider                 private constant _dataProvider      = IProtocolDataProvider(0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d);
-    ILendingPoolAddressesProvider         private constant _addressesProvider = ILendingPoolAddressesProvider(0xB53C1a33016B2DC2fF3653530bfF1848a515c8c5);
-    ILendingPoolAddressesProviderRegistry private constant _addressesRegistry = ILendingPoolAddressesProviderRegistry(0x52D306e36E3B6B02c153d0266ff0f85d18BCD413);
-
-    // ------------------------------------
-    // State properties
-    // ------------------------------------
-
-    address private _lender;
-    address private _borrower;
+    ILendingPool                          public constant lendingPool       = ILendingPool(0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9);
+    IProtocolDataProvider                 public constant dataProvider      = IProtocolDataProvider(0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d);
+    ILendingPoolAddressesProvider         public constant addressesProvider = ILendingPoolAddressesProvider(0xB53C1a33016B2DC2fF3653530bfF1848a515c8c5);
+    ILendingPoolAddressesProviderRegistry public constant addressesRegistry = ILendingPoolAddressesProviderRegistry(0x52D306e36E3B6B02c153d0266ff0f85d18BCD413);
 
     // ------------------------------------
     // Constructor
@@ -37,22 +29,15 @@ contract Delegator {
     }
 
     // ------------------------------------
-    // Modifiers
+    // Lender specific
     // ------------------------------------
+
+    address private _lender;
 
     modifier onlyLender {
         require(msg.sender == _lender, "Sender is not the lender");
         _;
     }
-
-    modifier onlyBorrower {
-        require(msg.sender == _borrower, "Sender is not the borrower");
-        _;
-    }
-
-    // ------------------------------------
-    // Mutative functions
-    // ------------------------------------
 
     function depositCollateral(address asset, uint amount) public onlyLender {
         IERC20 token = IERC20(asset);
@@ -75,8 +60,8 @@ contract Delegator {
         // withdraw all if no amount is specified
         uint amoutToWithdraw = amount;
         if (amoutToWithdraw == 0) {
-            (address aTokenAddress,,) = _dataProvider.getReserveTokensAddresses(asset);
-            amoutToWithdraw = IERC20(aTokenAddress).balanceOf(address(this));
+            address depositTokenAddress = _getAssociatedDepositTokenAddress(asset);
+            amoutToWithdraw = IERC20(depositTokenAddress).balanceOf(address(this));
         }
 
         // withdraw collateral from AAVE and forward to lender
@@ -84,12 +69,11 @@ contract Delegator {
     }
 
     function approveCreditDelegation(address asset, uint amount, bool variable) public onlyLender {
-        // retrieve associated debt token
-        (, address stableDebtTokenAddress, address variableDebtTokenAddress) = _dataProvider.getReserveTokensAddresses(asset);
-        IDebtToken debtToken = variable ? IDebtToken(variableDebtTokenAddress) : IDebtToken(stableDebtTokenAddress);
+        // retrieve associated debt token address
+        address debtTokenAddress = _getAssociatedDebtTokenAddress(asset, variable);
 
         // approve credit delegation for borrower
-        debtToken.approveDelegation(_borrower, amount);
+        IDebtToken(debtTokenAddress).approveDelegation(_borrower, amount);
     }
 
     function withdrawBalance(address asset) public onlyLender {
@@ -97,6 +81,17 @@ contract Delegator {
 
         // transfer any balance that this contract may have to the lender
         token.safeTransfer(msg.sender, token.balanceOf(address(this)));
+    }
+
+    // ------------------------------------
+    // Borrower specific
+    // ------------------------------------
+
+    address private _borrower;
+
+    modifier onlyBorrower {
+        require(msg.sender == _borrower, "Sender is not the borrower");
+        _;
     }
 
     function borrowDelegatedCredit(address asset, uint amount, bool variable) public onlyBorrower {
@@ -126,24 +121,25 @@ contract Delegator {
         );
     }
 
+    function getBorrowerAllowance(address asset, bool variable) public view returns (uint) {
+        IDebtToken debtToken = _getAssociatedDebtTokenAddress(asset, variable);
+
+        return debtToken.borrowAllowance(_lender, _borrower);
+    }
+
     // ------------------------------------
-    // View functions
+    // Utilities
     // ------------------------------------
 
-    function getAddressesRegistry() public pure returns (address) {
-        return address(_addressesRegistry);
+    function _getAssociatedDebtTokenAddress(address asset, bool variable) internal view returns (address) {
+        (, address stableDebtTokenAddress, address variableDebtTokenAddress) = _dataProvider.getReserveTokensAddresses(asset);
+
+        return variable ? variableDebtTokenAddress : stableDebtTokenAddress;
     }
 
-    function getAddressesProvider() public pure returns (address) {
-        return address(_addressesProvider);
-    }
+    function _getAssociatedDepositTokenAddress(address asset) internal view returns (address) {
+        (address aTokenAddress,,) = _dataProvider.getReserveTokensAddresses(asset);
 
-    function getLendingPool() public pure returns (address) {
-        return address(_lendingPool);
+        return aTokenAddres;
     }
-
-    function getDataProvider() public pure returns (address) {
-        return address(_dataProvider);
-    }
-
 }
