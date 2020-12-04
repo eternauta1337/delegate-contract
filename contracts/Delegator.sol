@@ -8,16 +8,19 @@ import "./interfaces/aave/IProtocolDataProvider.sol";
 
 import "./interfaces/common/IERC20.sol";
 
+// Aave Credit Delegation documentation: https://docs.aave.com/developers/v/2.0/guides/credit-delegation
 
 contract Delegator {
     // ------------------------------------
     // Aave contracts (mainnet)
+    // https://docs.aave.com/developers/v/2.0/deployed-contracts
     // ------------------------------------
 
-    ILendingPool                          public constant lendingPool       = ILendingPool(0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9);
-    IProtocolDataProvider                 public constant dataProvider      = IProtocolDataProvider(0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d);
-    ILendingPoolAddressesProvider         public constant addressesProvider = ILendingPoolAddressesProvider(0xB53C1a33016B2DC2fF3653530bfF1848a515c8c5);
-    ILendingPoolAddressesProviderRegistry public constant addressesRegistry = ILendingPoolAddressesProviderRegistry(0x52D306e36E3B6B02c153d0266ff0f85d18BCD413);
+    // https://etherscan.io/address/0x7d2768de32b0b80b7a3454c06bdac94a69ddc7a9
+    ILendingPool public constant lendingPool = ILendingPool(0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9);
+
+    // https://etherscan.io/address/0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d
+    IProtocolDataProvider public constant dataProvider = IProtocolDataProvider(0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d);
 
     // ------------------------------------
     // Constructor
@@ -39,7 +42,7 @@ contract Delegator {
         _;
     }
 
-    function depositCollateral(address asset, uint amount) public onlyLender {
+    function depositCollateral(address asset, uint amount) external onlyLender {
         IERC20 token = IERC20(asset);
 
         // transfer asset from lender to this contract
@@ -56,11 +59,11 @@ contract Delegator {
         );
     }
 
-    function withdrawCollateral(address asset, uint amount) public onlyLender {
+    function withdrawCollateral(address asset, uint amount) external onlyLender {
         // withdraw all if no amount is specified
         uint amoutToWithdraw = amount;
         if (amoutToWithdraw == 0) {
-            address depositTokenAddress = _getAssociatedDepositTokenAddress(asset);
+            address depositTokenAddress = getAssociatedDepositTokenAddress(asset);
             amoutToWithdraw = IERC20(depositTokenAddress).balanceOf(address(this));
         }
 
@@ -68,15 +71,15 @@ contract Delegator {
         _lendingPool.withdraw(asset, amountToWithdraw, _lender);
     }
 
-    function approveCreditDelegation(address asset, uint amount, bool variable) public onlyLender {
+    function approveCreditDelegation(address asset, uint amount, bool variable) external onlyLender {
         // retrieve associated debt token address
-        address debtTokenAddress = _getAssociatedDebtTokenAddress(asset, variable);
+        address debtTokenAddress = getAssociatedDebtTokenAddress(asset, variable);
 
         // approve credit delegation for borrower
         IDebtToken(debtTokenAddress).approveDelegation(_borrower, amount);
     }
 
-    function withdrawBalance(address asset) public onlyLender {
+    function withdrawBalance(address asset) external onlyLender {
         IERC20 token = IERC20(asset);
 
         // transfer any balance that this contract may have to the lender
@@ -94,7 +97,7 @@ contract Delegator {
         _;
     }
 
-    function borrowDelegatedCredit(address asset, uint amount, bool variable) public onlyBorrower {
+    function borrowDelegatedCredit(address asset, uint amount, bool variable) external onlyBorrower {
         // borrow delegated credit
         _lendingPool.borrow(
             asset,
@@ -105,7 +108,7 @@ contract Delegator {
         );
     }
 
-    function repayDelegatedCredit(bool bariable) public {
+    function repayDelegatedCredit(address asset, bool bariable) external {
         IERC20 token = IERC20(asset);
 
         // transfer asset from repayer to this contract
@@ -121,23 +124,37 @@ contract Delegator {
         );
     }
 
-    function getBorrowerAllowance(address asset, bool variable) public view returns (uint) {
-        IDebtToken debtToken = _getAssociatedDebtTokenAddress(asset, variable);
-
-        return debtToken.borrowAllowance(_lender, _borrower);
-    }
-
     // ------------------------------------
     // Utilities
     // ------------------------------------
 
-    function _getAssociatedDebtTokenAddress(address asset, bool variable) internal view returns (address) {
+    function getUserAccountData(address user)
+    external
+    view
+    returns (
+        uint256 totalCollateralETH,
+        uint256 totalDebtETH,
+        uint256 availableBorrowsETH,
+        uint256 currentLiquidationThreshold,
+        uint256 ltv,
+        uint256 healthFactor
+    ) {
+        return _lendingPool.getUserAccountData(user);
+    }
+
+    function getDelegatedCreditAllowance(address asset, bool variable) external view returns (uint) {
+        IDebtToken debtToken = getAssociatedDebtTokenAddress(asset, variable);
+
+        return debtToken.borrowAllowance(_lender, _borrower);
+    }
+
+    function getAssociatedDebtTokenAddress(address asset, bool variable) public view returns (address) {
         (, address stableDebtTokenAddress, address variableDebtTokenAddress) = _dataProvider.getReserveTokensAddresses(asset);
 
         return variable ? variableDebtTokenAddress : stableDebtTokenAddress;
     }
 
-    function _getAssociatedDepositTokenAddress(address asset) internal view returns (address) {
+    function getAssociatedDepositTokenAddress(address asset) public view returns (address) {
         (address aTokenAddress,,) = _dataProvider.getReserveTokensAddresses(asset);
 
         return aTokenAddres;
