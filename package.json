@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "hardhat test",
+    "lint:sol": "prettier --write 'contracts/**/*.sol'"
   },
   "keywords": [],
   "author": "",
@@ -16,6 +17,8 @@
     "dotenv": "^8.2.0",
     "ethereum-waffle": "^3.2.1",
     "ethers": "^5.0.23",
-    "hardhat": "^2.0.4"
+    "hardhat": "^2.0.4",
+    "prettier": "^2.2.1",
+    "prettier-plugin-solidity": "^1.0.0-beta.1"
   }
 }
