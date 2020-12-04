@@ -4,13 +4,15 @@ require("@nomiclabs/hardhat-waffle");
 
 module.exports = {
   solidity: "0.7.3",
-  defaultNetwork: 'mainnet',
+  defaultNetwork: 'hardhat',
   networks: {
     mainnet: {
-      url: `https://mainnet.infura.io/v3/${process.env.INFURA_KEY}`,
+      url: process.env.MAINNET_PROVIDER,
     },
-    mainnet_fork: {
-      url: 'http://localhost:8545'
+    hardhat: {
+      forking: {
+        url: process.env.MAINNET_PROVIDER
+      }
     }
   }
 };
