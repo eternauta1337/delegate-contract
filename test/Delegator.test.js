@@ -13,6 +13,13 @@ const impersonateAddress = async (address) => {
   return signer;
 };
 
+const resetFork = async () => {
+  await hre.network.provider.request({
+    method: 'hardhat_reset',
+    params: []
+  });
+};
+
 // Mainnet
 const addresses = {
   lendingPool: '0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9',
@@ -26,6 +33,11 @@ const addresses = {
 describe("Delegator", function() {
   let delegator, token;
   let lender, borrower;
+
+  before('reset the fork', async () => {
+    // TODO: This is causing problems
+    // await resetFork();
+  });
 
   describe('when deploying a Delegator contract', () => {
     before('get lender and borrower', async () => {
@@ -116,11 +128,15 @@ describe("Delegator", function() {
               expect(await token.allowance(lender.address, delegator.address)).to.be.equal(amount);
             });
 
-            describe('when the lender deposits collateral', () => {
+            describe.skip('when the lender deposits collateral', () => {
               before('deposit collateral through the contract', async () => {
                 connectDelegatorWith(lender);
 
                 await delegator.depositCollateral(token.address, amount);
+              });
+
+              it('deposited the collateral', async () => {
+                // TODO
               });
             });
           });
