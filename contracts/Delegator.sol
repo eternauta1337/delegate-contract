@@ -29,9 +29,9 @@ contract Delegator {
     // Constructor
     // ------------------------------------
 
-    constructor(address lender, address borrower) {
-        lender = lender;
-        borrower = borrower;
+    constructor(address _lender, address _borrower) {
+        lender = _lender;
+        borrower = _borrower;
     }
 
     // ------------------------------------
