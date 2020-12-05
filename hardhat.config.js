@@ -9,11 +9,17 @@ module.exports = {
     mainnet: {
       url: process.env.MAINNET_PROVIDER,
     },
+    local: {
+      url: 'http://localhost:8545'
+    },
     hardhat: {
       forking: {
         url: process.env.MAINNET_PROVIDER
       }
     }
+  },
+  mocha: {
+    timeout: 600000
   }
 };
 

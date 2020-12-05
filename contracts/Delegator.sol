@@ -53,6 +53,10 @@ contract Delegator {
 
         // transfer asset from lender to this contract
         require(
+            token.balanceOf(msg.sender) >= amount,
+            "Insufficient balance"
+        );
+        require(
             token.allowance(msg.sender, address(this)) >= amount,
             "Insufficient allowance"
         );
