@@ -1,52 +1,9 @@
 const { expect } = require("chai");
-const hre = require('hardhat');
-
-const impersonateAddress = async (address) => {
-  await hre.network.provider.request({
-    method: 'hardhat_impersonateAccount',
-    params: [address],
-  });
-
-  const signer = await ethers.provider.getSigner(address);
-  signer.address = signer._address;
-
-  return signer;
-};
-
-const resetFork = async () => {
-  await hre.network.provider.request({
-    method: 'hardhat_reset',
-    params: [],
-  });
-};
-
-const mineBlock = async () => {
-  await hre.network.provider.request({
-    method: 'evm_mine',
-    params: [],
-  });
-};
-
-const takeSnapshot = async () => {
-  const response = await hre.network.provider.request({
-    method: 'evm_snapshot',
-    params: [],
-  });
-  console.log(response);
-
-  await mineBlock();
-
-  return response.result;
-};
-
-const restoreSnapshot = async (id) => {
-  await hre.network.provider.request({
-    method: 'evm_revert',
-    params: [id],
-  });
-
-  await mineBlock();
-};
+const {
+  takeSnapshot,
+  restoreSnapshot,
+  impersonateAddress,
+} = require('./utils/rpc');
 
 // Mainnet
 const addresses = {
@@ -59,7 +16,7 @@ const addresses = {
 const holders = {
   sUSD: '0xEb3107117FEAd7de89Cd14D463D340A2E6917769', // Synthetix protocolDAO
   DAI: '0x0B30483057D6A7798378EdbA707d625116Ed7640',
-}
+};
 
 describe("Delegator", function() {
   // Contracts
@@ -69,10 +26,19 @@ describe("Delegator", function() {
   let deployer, someone;
   let lender, borrower;
 
-  before('reset the fork', async () => {
-    // TODO: This is causing problems
-    // await resetFork();
-  });
+  // Used to compare values
+  const tokenBalance = {};
+  const collateralETH = {};
+  const availableBorrowsETH = {};
+  const totalDebtETH = {};
+
+  const connectDelegatorWith = (signer) => {
+    delegator = delegator.connect(signer);
+  };
+
+  const connectTokenWith = (signer) => {
+    token = token.connect(signer);
+  };
 
   describe('when deploying a Delegator contract', () => {
     before('get lender and borrower', async () => {
@@ -96,16 +62,11 @@ describe("Delegator", function() {
       expect(await delegator.borrower()).to.be.equal(borrower.address);
     });
 
-    const connectDelegatorWith = (signer) => {
-      delegator = delegator.connect(signer);
-    };
+    const itSuccesfullyDelegatesWith = ({ assetName, collateralAmount, delegatedAmount }) => {
+      const collateralAmountHuman = ethers.utils.formatEther(collateralAmount);
+      const delegatedAmountHuman = ethers.utils.formatEther(delegatedAmount);
 
-    const connectTokenWith = (signer) => {
-      token = token.connect(signer);
-    };
-
-    const itSuccesfullyDelegatesWith = ({ assetName, amount }) => {
-      describe(`when delegating ${ethers.utils.formatEther(amount)} ${assetName}`, () => {
+      describe(`when using ${collateralAmountHuman} ${assetName} as collateral to loan ${delegatedAmountHuman} ${assetName}`, () => {
         before('connect with token', async () => {
           const assetAddress = addresses[assetName];
           token = await ethers.getContractAt('IERC20', assetAddress);
@@ -141,10 +102,10 @@ describe("Delegator", function() {
           });
 
           it('lender has the necessary balance', async () => {
-            expect(await token.balanceOf(lender.address)).to.be.gt(amount);
+            expect(await token.balanceOf(lender.address)).to.be.gt(collateralAmount);
           });
 
-          describe('before the lender has provided allowance to the token', () => {
+          describe('before the lender has provided allowance to the contract', () => {
             it('reverts if the lender attempts to deposit collateral', async () => {
               connectDelegatorWith(lender);
 
@@ -153,28 +114,28 @@ describe("Delegator", function() {
           });
 
           describe('when the lender provides allowance to the contract', () => {
-            let collateralETH = {};
-
-            before('record previous collateral', async () => {
-              const data = await delegator.getUserData(delegator.address);
-
-              collateralETH.before = data.totalCollateralETH;
-            });
-
             before('provide allowance to the contract', async () => {
               connectTokenWith(lender);
-              await token.approve(delegator.address, amount);
+
+              await token.approve(delegator.address, ethers.utils.parseEther('100000000000000000'));
             });
 
             it('provided allowance to the contract', async () => {
-              expect(await token.allowance(lender.address, delegator.address)).to.be.equal(amount);
+              expect(await token.allowance(lender.address, delegator.address)).to.be.gte(collateralAmount);
             });
 
             describe('when the lender deposits collateral', () => {
+              before('record current values', async () => {
+                const data = await delegator.getUserData(delegator.address);
+
+                collateralETH.before = data.totalCollateralETH;
+                availableBorrowsETH.before = data.availableBorrowsETH;
+              });
+
               before('deposit collateral through the contract', async () => {
                 connectDelegatorWith(lender);
 
-                await delegator.depositCollateral(token.address, amount);
+                await delegator.depositCollateral(token.address, collateralAmount);
               });
 
               it('deposited the collateral on behalf of the contract', async () => {
@@ -184,33 +145,102 @@ describe("Delegator", function() {
                 expect(collateralETH.after).to.be.gt(collateralETH.before);
               });
 
+              it('shows available borrow balance', async () => {
+                const data = await delegator.getUserData(delegator.address);
+                availableBorrowsETH.after = data.availableBorrowsETH;
+
+                expect(availableBorrowsETH.after).to.be.gt(availableBorrowsETH.before);
+              });
+
               describe('when the lender withdraws collateral before a loan is made', () => {
-                let snapshotId;
-                let tokenBalance = {};
+                // let snapshotId;
 
-                before('takeSnapshot', async () => {
-                  snapshotId = await takeSnapshot();
-                  console.log('SNAPSHOT', snapshotId);
-                });
+                // before('takeSnapshot', async () => {
+                //   snapshotId = await takeSnapshot();
+                // });
 
-                after('restoreSnapshot', async () => {
-                  await restoreSnapshot(snapshotId);
-                });
+                // after('restoreSnapshot', async () => {
+                //   await restoreSnapshot(snapshotId);
+                // });
 
-                before('record previous balance', async () => {
+                before('record previous values', async () => {
                   tokenBalance.before = await token.balanceOf(lender.address);
+
+                  const data = await delegator.getUserData(delegator.address);
+                  collateralETH.before = data.totalCollateralETH;
                 });
 
-                before('withdraw all colateral', async () => {
+                before('withdraw some collateral', async () => {
                   connectDelegatorWith(lender);
 
-                  await delegator.withdrawCollateral(token.address, amount);
+                  await delegator.withdrawCollateral(token.address, ethers.utils.parseEther('1000'));
                 });
 
                 it('incremented the lender balance', async () => {
                   tokenBalance.after = await token.balanceOf(lender.address);
 
                   expect(tokenBalance.after).to.be.gt(tokenBalance.before);
+                });
+
+                it('decremented the lender collateral', async () => {
+                  const data = await delegator.getUserData(delegator.address);
+                  collateralETH.after = data.totalCollateralETH;
+
+                  expect(collateralETH.after).to.be.lt(collateralETH.before);
+                });
+              });
+
+              it('reverts when the borrower attempts to borrow before credit has been delegated', async () => {
+                connectDelegatorWith(borrower);
+
+                // TODO: verify what this error means
+                expect(delegator.borrowDelegatedCredit(token.address, 1, false)).to.be.revertedWith('9');
+              });
+
+              describe('when the lender approves credit delegation', () => {
+                before('approve credit', async () => {
+                  connectDelegatorWith(lender);
+
+                  await delegator.approveCreditDelegation(token.address, delegatedAmount, false);
+                });
+
+                it('shows available credit for the borrower', async () => {
+                  expect(await delegator.getDelegatedCreditAllowance(token.address, false)).to.be.equal(delegatedAmount);
+                });
+
+                it('reverts if the borrower attempts to borrow more than its allowance', async () => {
+                  connectDelegatorWith(borrower);
+
+                  const exceeding = delegatedAmount.add(ethers.utils.parseEther('1'));
+                  expect(delegator.borrowDelegatedCredit(token.address, exceeding, false)).to.be.revertedWith('9');
+                });
+
+                describe('when the borrower takes the delegated loan', () => {
+                  before('record current values', async () => {
+                    const data = await delegator.getUserData(delegator.address);
+                    totalDebtETH.before = data.totalDebtETH;
+
+                    tokenBalance.before = await token.balanceOf(borrower.address);
+                  });
+
+                  before('borrow credit', async () => {
+                    connectDelegatorWith(borrower);
+
+                    await delegator.borrowDelegatedCredit(token.address, delegatedAmount, false);
+                  });
+
+                  it('increases the lenders debt', async () => {
+                    const data = await delegator.getUserData(delegator.address);
+                    totalDebtETH.after = data.totalDebtETH;
+
+                    expect(totalDebtETH.after).to.be.gt(totalDebtETH.before);
+                  });
+
+                  it('increases the borrowers balance', async () => {
+                    tokenBalance.after = await token.balanceOf(borrower.address);
+
+                    expect(tokenBalance.after).to.be.gt(tokenBalance.before);
+                  });
                 });
               });
             });
@@ -219,8 +249,9 @@ describe("Delegator", function() {
       });
     };
 
-    const amount = ethers.utils.parseEther('50000');
-    itSuccesfullyDelegatesWith({ assetName: 'DAI', amount });
-    // itSuccesfullyDelegatesWith({ assetName: 'sUSD', amount: 1 });
+    const collateralAmount = ethers.utils.parseEther('50000');
+    const delegatedAmount = ethers.utils.parseEther('10000');
+
+    itSuccesfullyDelegatesWith({ assetName: 'DAI', collateralAmount, delegatedAmount });
   });
 });

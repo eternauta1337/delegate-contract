@@ -86,7 +86,7 @@ contract Delegator {
             );
         }
 
-        // withdraw collateral from AAVE and forward to lender
+        // withdraw collateral from Aave and forward to lender
         lendingPool.withdraw(asset, amountToWithdraw, lender);
     }
 
@@ -132,7 +132,7 @@ contract Delegator {
             amount,
             variable ? 2 : 1, // interestRateMode, stable = 1, variable = 2
             0, // referralCode
-            lender // delegator
+            address(this) // delegator
         );
     }
 
@@ -212,7 +212,7 @@ contract Delegator {
     {
         IDebtToken debtToken = IDebtToken(getAssociatedDebtTokenAddress(asset, variable));
 
-        return debtToken.borrowAllowance(lender, borrower);
+        return debtToken.borrowAllowance(address(this), borrower);
     }
 
     function getAssociatedDebtTokenAddress(address asset, bool variable)
