@@ -132,7 +132,7 @@ contract Delegator {
             amount,
             variable ? 2 : 1, // interestRateMode, stable = 1, variable = 2
             0, // referralCode
-            address(this) // delegator
+            borrower // delegator
         );
     }
 
